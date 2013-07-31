@@ -2515,7 +2515,29 @@ class MetaProject(Project):
                      revisionId = None,
                      groups = None)
 
-  def PreSync(self):
+  def _AutoUpdateRemoteUrl(self):
+    """Update this project to point to the new service."""
+    # TODO(szager): Remove this code once the migration is complete.
+    url = self.config.GetString('remote.origin.url')
+    public_host = 'https://chromium.googlesource.com'
+    internal_host = 'https://chrome-internal.googlesource.com'
+    # Note that hostmap must be applied in order, to correctly handle the
+    # variants of git.chromium.org url's.
+    hostmap = [
+        ('ssh://gerrit.chromium.org:29418', public_host),
+        ('http://git.chromium.org/git', public_host),
+        ('http://git.chromium.org', public_host),
+        ('https://git.chromium.org/git', public_host),
+        ('https://git.chromium.org', public_host),
+        ('ssh://gerrit-int.chromium.org:29419', internal_host),
+    ]
+    new_url = url
+    for h in hostmap:
+      new_url = new_url.replace(h[0], h[1])
+    if new_url != url:
+      self.config.SetString('remote.origin.url', new_url)
+
+  def PreSync(self, autoupdate=False):
     if self.Exists:
       cb = self.CurrentBranch
       if cb:
@@ -2523,6 +2545,8 @@ class MetaProject(Project):
         if base:
           self.revisionExpr = base
           self.revisionId = None
+      if autoupdate:
+        self._AutoUpdateRemoteUrl()
 
   def MetaBranchSwitch(self, target):
     """ Prepare MetaProject for manifest branch switch
