@@ -532,10 +532,10 @@ uncommitted changes are present' % project.relpath
         sys.exit(1)
 
     rp = self.manifest.repoProject
-    rp.PreSync()
+    rp.PreSync(autoupdate=True)
 
     mp = self.manifest.manifestProject
-    mp.PreSync()
+    mp.PreSync(autoupdate=False)
 
     if opt.repo_upgraded:
       _PostRepoUpgrade(self.manifest, quiet=opt.quiet)
