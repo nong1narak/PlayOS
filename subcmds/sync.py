@@ -616,7 +616,7 @@ later is required to fix a server side protocol bug.
     rp.PreSync(autoupdate=True)
 
     mp = self.manifest.manifestProject
-    mp.PreSync(autoupdate=False)
+    mp.PreSync(autoupdate=True)
 
     if opt.repo_upgraded:
       _PostRepoUpgrade(self.manifest, quiet=opt.quiet)
