@@ -336,12 +336,36 @@ class _DigestAuthHandler(urllib2.HTTPDigestAuthHandler):
         self.retried = 0
       raise
 
+def add_netrc_token(missing_host, existing_host, token):
+  try:
+    with open(os.path.join(os.environ['HOME'], '.netrc'), 'a') as fh:
+      fh.write('machine %s login %s password %s\n' % (
+          missing_host, token[0], token[2]))
+  except IOError:
+    print >>sys.stderr, (
+        'warn: ~/.netrc file has an auth token for machine %s, '
+        'but not for machine %s.' % (existing_host, missing_host))
+
+def auto_update_netrc(n):
+  for host in ('chromium', 'chrome-internal'):
+    git_host = '%s.googlesource.com' % host
+    git_token = n.hosts.get(git_host)
+    gerrit_host = '%s-review.googlesource.com' % host
+    gerrit_token = n.hosts.get(gerrit_host)
+    if git_token and not gerrit_token:
+      n.hosts[gerrit_host] = git_token
+      add_netrc_token(gerrit_host, git_host, git_token)
+    elif gerrit_token and not git_token:
+      n.hosts[git_host] = gerrit_token
+      add_netrc_token(git_host, gerrit_host, gerrit_token)
+
 def init_http():
   handlers = [_UserAgentHandler()]
 
   mgr = urllib2.HTTPPasswordMgrWithDefaultRealm()
   try:
     n = netrc.netrc()
+    auto_update_netrc(n)
     for host in n.hosts:
       p = n.hosts[host]
       mgr.add_password(p[1], 'http://%s/'  % host, p[0], p[2])
