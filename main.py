@@ -338,9 +338,8 @@ def add_netrc_token(missing_host, existing_host, token):
       fh.write('machine %s login %s password %s\n' % (
           missing_host, token[0], token[2]))
   except IOError:
-    print >>sys.stderr, (
-        'warn: ~/.netrc file has an auth token for machine %s, '
-        'but not for machine %s.' % (existing_host, missing_host))
+    print('warn: ~/.netrc file has an auth token for machine %s, but not for '
+          'machine %s.' % (existing_host, missing_host), file=sys.stderr)
 
 def auto_update_netrc(n):
   for host in ('chromium', 'chrome-internal'):
