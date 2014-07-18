@@ -638,6 +638,11 @@ later is required to fix a server side protocol bug.
                                     missing_ok=True,
                                     submodules_ok=opt.fetch_submodules)
 
+    for project in all_projects:
+      if len(self.manifest.GetProjectsWithName(project.name)) > 1:
+        print('Shared project %s found, disabling pruning.' % project.name)
+        project.work_git.config("--replace-all", "gc.pruneExpire", "never")
+
     self._fetch_times = _FetchTimes(self.manifest)
     if not opt.local_only:
       to_fetch = []
