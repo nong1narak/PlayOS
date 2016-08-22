@@ -14,6 +14,7 @@
 # limitations under the License.
 
 from __future__ import print_function
+import glob
 import json
 import netrc
 from optparse import SUPPRESS_HELP
@@ -64,7 +65,7 @@ try:
 except ImportError:
   multiprocessing = None
 
-from git_command import GIT, git_require
+from git_command import GIT, git_require, GitCommand
 from git_config import GetUrlCookieFile
 from git_refs import R_HEADS, HEAD
 import gitc_utils
@@ -239,6 +240,11 @@ later is required to fix a server side protocol bug.
                  help='only fetch projects fixed to sha1 if revision does not exist locally')
     p.add_option('--prune', dest='prune', action='store_true',
                  help='delete refs that no longer exist on the remote')
+    p.add_option('--cache-dir', dest='cache_dir', action='store',
+                 help='Use git-cache to populate project cache into this '
+                      'directory. Bootstrap the local repository from this '
+                      'directory if the project cache exists. This applies '
+                      'to the projects on chromium and chrome-internal.')
     if show_smart:
       p.add_option('-s', '--smart-sync',
                    dest='smart_sync', action='store_true',
@@ -311,7 +317,8 @@ later is required to fix a server side protocol bug.
           clone_bundle=not opt.no_clone_bundle,
           no_tags=opt.no_tags, archive=self.manifest.IsArchive,
           optimized_fetch=opt.optimized_fetch,
-          prune=opt.prune)
+          prune=opt.prune,
+          cache_dir=opt.cache_dir)
         self._fetch_times.Set(project, time.time() - start)
 
         # Lock around all the rest of the code, since printing, updating a set
@@ -547,6 +554,30 @@ later is required to fix a server side protocol bug.
         print('error: both -u and -p must be given', file=sys.stderr)
         sys.exit(1)
 
+    cache_dir = opt.cache_dir
+    if cache_dir:
+      if self.manifest.IsMirror or self.manifest.IsArchive:
+        print('fatal: --cache-dir is not supported with mirror or archive '
+              'repository.')
+        sys.exit(1)
+
+      if os.path.exists(cache_dir):
+        if not os.path.isdir(cache_dir):
+          print('fatal: cache_dir must be a directory', file=sys.stderr)
+          sys.exit(1)
+        else:
+          # Unlock the locks in the cache_dir.
+          unlock_cmd = ['cache', 'unlock', '-vv', '--force', '--all',
+                        '--cache-dir', cache_dir]
+          if GitCommand(None, unlock_cmd).Wait() != 0:
+            raise Exception('Failed to unlock cache_dir %s' % cache_dir)
+
+          locks = glob.glob(os.path.join(cache_dir, '*.lock'))
+          if locks:
+            raise Exception('Found %s after cache unlock.' % locks)
+      else:
+        os.makedirs(opt.cache_dir)
+
     if opt.manifest_name:
       self.manifest.Override(opt.manifest_name)
 
@@ -670,7 +701,8 @@ later is required to fix a server side protocol bug.
       mp.Sync_NetworkHalf(quiet=opt.quiet,
                           current_branch_only=opt.current_branch_only,
                           no_tags=opt.no_tags,
-                          optimized_fetch=opt.optimized_fetch)
+                          optimized_fetch=opt.optimized_fetch,
+                          cache_dir=cache_dir)
 
     if mp.HasChanges:
       syncbuf = SyncBuffer(mp.config)
