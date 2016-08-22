@@ -111,3 +111,7 @@ class HookError(Exception):
 
   The common case is that the file wasn't present when we tried to run it.
   """
+
+class CacheApplyError(Exception):
+  """Thrown when errors happen in 'repo sync' with '--cache-dir' option.
+  """

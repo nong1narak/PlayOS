@@ -31,8 +31,9 @@ import traceback
 from color import Coloring
 from git_command import GitCommand, git_require
 from git_config import GitConfig, IsId, GetSchemeFromUrl, GetUrlCookieFile, \
-    ID_RE
+    ID_RE, RefSpec
 from error import GitError, HookError, UploadError, DownloadError
+from error import CacheApplyError
 from error import ManifestInvalidRevisionError
 from error import NoManifestException
 from trace import IsTrace, Trace
@@ -1183,6 +1184,68 @@ class Project(object):
       _error("Cannot extract archive %s: %s", tarpath, str(e))
     return False
 
+  def CachePopulate(self, cache_dir, url):
+    """Populate cache in the cache_dir.
+
+    Args:
+      cache_dir: Directory to cache git files from Google Storage.
+      url: Git url of current repository.
+
+    Raises:
+      CacheApplyError if it fails to populate the git cache.
+    """
+    cmd = ['cache', 'populate', '--ignore_locks', '-v',
+           '--cache-dir', cache_dir, url]
+
+    if GitCommand(self, cmd, cwd=cache_dir).Wait() != 0:
+      raise CacheApplyError('Failed to populate cache. cache_dir: %s '
+                            'url: %s' % (cache_dir, url))
+
+  def CacheExists(self, cache_dir, url):
+    """Check the existence of the cache files.
+
+    Args:
+      cache_dir: Directory to cache git files.
+      url: Git url of current repository.
+
+    Raises:
+      CacheApplyError if the cache files do not exist.
+    """
+    cmd = ['cache', 'exists', '--quiet', '--cache-dir', cache_dir, url]
+
+    exist = GitCommand(self, cmd, cwd=self.gitdir, capture_stdout=True)
+    if exist.Wait() != 0:
+      raise CacheApplyError('Failed to execute git cache exists cmd. '
+                            'cache_dir: %s url: %s' % (cache_dir, url))
+
+    if not exist.stdout or not exist.stdout.strip():
+      raise CacheApplyError('Failed to find cache. cache_dir: %s '
+                            'url: %s' % (cache_dir, url))
+    return exist.stdout.strip()
+
+  def CacheApply(self, cache_dir):
+    """Apply git cache files populated from Google Storage buckets.
+
+    Args:
+      cache_dir: Directory to cache git files.
+
+    Raises:
+      CacheApplyError if it fails to apply git caches.
+    """
+    remote = self.GetRemote(self.remote.name)
+
+    self.CachePopulate(cache_dir, remote.url)
+
+    mirror_dir = self.CacheExists(cache_dir, remote.url)
+
+    refspec = RefSpec(True, 'refs/heads/*',
+                      'refs/remotes/%s/*' % remote.name)
+
+    fetch_cache_cmd = ['fetch', mirror_dir, str(refspec)]
+    if GitCommand(self, fetch_cache_cmd, self.gitdir).Wait() != 0:
+      raise CacheApplyError('Failed to fetch refs %s from %s' %
+                            (mirror_dir, str(refspec)))
+
   def Sync_NetworkHalf(self,
                        quiet=False,
                        is_new=None,
@@ -1192,7 +1255,8 @@ class Project(object):
                        no_tags=False,
                        archive=False,
                        optimized_fetch=False,
-                       prune=False):
+                       prune=False,
+                       cache_dir=None):
     """Perform only the network IO portion of the sync process.
        Local working directory/branch state is not affected.
     """
@@ -1244,7 +1308,22 @@ class Project(object):
     else:
       alt_dir = None
 
+    applied_cache = False
+    # If cache_dir is provided, and it's a new repository without
+    # alternative_dir, bootstrap this project repo with the git
+    # cache files.
+    if cache_dir is not None and is_new and alt_dir is None:
+      try:
+        self.CacheApply(cache_dir)
+        applied_cache = True
+        is_new = False
+      except CacheApplyError as e:
+        _error('Could not apply git cache: %s', e)
+        _error('Please check if you have the right GS credentials.')
+        _error('Please check if the cache files exist in GS.')
+
     if clone_bundle \
+            and not applied_cache \
             and alt_dir is None \
             and self._ApplyCloneBundle(initial=is_new, quiet=quiet):
       is_new = False
