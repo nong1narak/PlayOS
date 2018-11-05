@@ -1137,12 +1137,7 @@ class Project(object):
     cmd = ['push']
 
     if url.startswith('ssh://'):
-      rp = ['gerrit receive-pack']
-      for e in people[0]:
-        rp.append('--reviewer=%s' % sq(e))
-      for e in people[1]:
-        rp.append('--cc=%s' % sq(e))
-      cmd.append('--receive-pack=%s' % " ".join(rp))
+      cmd.append('--receive-pack=gerrit receive-pack')
 
     cmd.append(url)
 
@@ -1158,15 +1153,14 @@ class Project(object):
     if auto_topic:
       ref_spec = ref_spec + '/' + branch.name
 
-    if not url.startswith('ssh://'):
-      rp = ['r=%s' % p for p in people[0]] + \
-           ['cc=%s' % p for p in people[1]]
-      if private:
-        rp = rp + ['private']
-      if wip:
-        rp = rp + ['wip']
-      if rp:
-        ref_spec = ref_spec + '%' + ','.join(rp)
+    opts = ['r=%s' % p for p in people[0]]
+    opts += ['cc=%s' % p for p in people[1]]
+    if private:
+      opts += ['private']
+    if wip:
+      opts += ['wip']
+    if opts:
+      ref_spec = ref_spec + '%' + ','.join(opts)
     cmd.append(ref_spec)
 
     if GitCommand(self, cmd, bare=True).Wait() != 0:
