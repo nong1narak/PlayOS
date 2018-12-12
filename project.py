@@ -918,11 +918,13 @@ class Project(object):
     else:
       return False
 
-  def PrintWorkTreeStatus(self, output_redir=None):
+  def PrintWorkTreeStatus(self, output_redir=None, quiet=False):
     """Prints the status of the repository to stdout.
 
     Args:
       output: If specified, redirect the output to this object.
+      quiet:  If True then only print the project name.  Do not print
+              the modified files, branch name, etc.
     """
     if not os.path.isdir(self.worktree):
       if output_redir is None:
@@ -947,6 +949,10 @@ class Project(object):
     if output_redir is not None:
       out.redirect(output_redir)
     out.project('project %-40s', self.relpath + '/ ')
+
+    if quiet:
+      out.nl()
+      return 'DIRTY'
 
     branch = self.CurrentBranch
     if branch is None:
@@ -1347,13 +1353,18 @@ class Project(object):
       elif self.manifest.default.sync_c:
         current_branch_only = True
 
+    if self.clone_depth:
+      depth = self.clone_depth
+    else:
+      depth = self.manifest.manifestProject.config.GetString('repo.depth')
+
     need_to_fetch = not (optimized_fetch and
                          (ID_RE.match(self.revisionExpr) and
                           self._CheckForSha1()))
     if (need_to_fetch and
         not self._RemoteFetch(initial=is_new, quiet=quiet, alt_dir=alt_dir,
                               current_branch_only=current_branch_only,
-                              no_tags=no_tags, prune=prune)):
+                              no_tags=no_tags, prune=prune, depth=depth)):
       return False
 
     if self.worktree:
@@ -1969,23 +1980,17 @@ class Project(object):
                    quiet=False,
                    alt_dir=None,
                    no_tags=False,
-                   prune=False):
+                   prune=False,
+                   depth=None):
 
     is_sha1 = False
     tag_name = None
-    depth = None
-
     # The depth should not be used when fetching to a mirror because
     # it will result in a shallow repository that cannot be cloned or
     # fetched from.
-    if not self.manifest.IsMirror:
-      if self.clone_depth:
-        depth = self.clone_depth
-      else:
-        depth = self.manifest.manifestProject.config.GetString('repo.depth')
-      # The repo project should never be synced with partial depth
-      if self.relpath == '.repo/repo':
-        depth = None
+    # The repo project should also never be synced with partial depth.
+    if self.manifest.IsMirror or self.relpath == '.repo/repo':
+      depth = None
 
     if depth:
       current_branch_only = True
@@ -2146,21 +2151,22 @@ class Project(object):
           os.remove(packed_refs)
       self.bare_git.pack_refs('--all', '--prune')
 
-    if is_sha1 and current_branch_only and self.upstream:
+    if is_sha1 and current_branch_only:
       # We just synced the upstream given branch; verify we
       # got what we wanted, else trigger a second run of all
       # refs.
       if not self._CheckForSha1():
-        if not depth:
-          # Avoid infinite recursion when depth is True (since depth implies
-          # current_branch_only)
-          return self._RemoteFetch(name=name, current_branch_only=False,
-                                   initial=False, quiet=quiet, alt_dir=alt_dir)
-        if self.clone_depth:
-          self.clone_depth = None
+        if current_branch_only and depth:
+          # Sync the current branch only with depth set to None
           return self._RemoteFetch(name=name,
                                    current_branch_only=current_branch_only,
-                                   initial=False, quiet=quiet, alt_dir=alt_dir)
+                                   initial=False, quiet=quiet, alt_dir=alt_dir,
+                                   depth=None)
+        else:
+          # Avoid infinite recursion: sync all branches with depth set to None
+          return self._RemoteFetch(name=name, current_branch_only=False,
+                                   initial=False, quiet=quiet, alt_dir=alt_dir,
+                                   depth=None)
 
     return ok
 
@@ -2483,6 +2489,7 @@ class Project(object):
         src = os.path.realpath(os.path.join(srcdir, name))
         # Fail if the links are pointing to the wrong place
         if src != dst:
+          _error('%s is different in %s vs %s', name, destdir, srcdir)
           raise GitError('--force-sync not enabled; cannot overwrite a local '
                          'work tree. If you\'re comfortable with the '
                          'possibility of losing the work tree\'s git metadata,'
@@ -2524,6 +2531,14 @@ class Project(object):
         if name in symlink_dirs and not os.path.lexists(src):
           os.makedirs(src)
 
+        if name in to_symlink:
+          os.symlink(os.path.relpath(src, os.path.dirname(dst)), dst)
+        elif copy_all and not os.path.islink(dst):
+          if os.path.isdir(src):
+            shutil.copytree(src, dst)
+          elif os.path.isfile(src):
+            shutil.copy(src, dst)
+
         # If the source file doesn't exist, ensure the destination
         # file doesn't either.
         if name in symlink_files and not os.path.lexists(src):
@@ -2532,13 +2547,6 @@ class Project(object):
           except OSError:
             pass
 
-        if name in to_symlink:
-          os.symlink(os.path.relpath(src, os.path.dirname(dst)), dst)
-        elif copy_all and not os.path.islink(dst):
-          if os.path.isdir(src):
-            shutil.copytree(src, dst)
-          elif os.path.isfile(src):
-            shutil.copy(src, dst)
       except OSError as e:
         if e.errno == errno.EPERM:
           raise DownloadError('filesystem must support symlinks')
