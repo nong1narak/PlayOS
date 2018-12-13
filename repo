@@ -247,6 +247,7 @@ GITC_FS_ROOT_DIR = '/gitc/manifest-rw/'
 
 import errno
 import optparse
+import platform
 import re
 import shutil
 import stat
@@ -319,6 +320,9 @@ group.add_option('--archive',
                  dest='archive', action='store_true',
                  help='checkout an archive instead of a git repository for '
                       'each project. See git archive.')
+group.add_option('--submodules',
+                 dest='submodules', action='store_true',
+                 help='sync any submodules associated with the manifest repo')
 group.add_option('-g', '--groups',
                  dest='groups', default='default',
                  help='restrict manifest projects to ones with specified '
@@ -1011,7 +1015,10 @@ def main(orig_args):
   me.extend(orig_args)
   me.extend(extra_args)
   try:
-    os.execv(sys.executable, me)
+    if platform.system() == "Windows":
+      sys.exit(subprocess.call(me))
+    else:
+      os.execv(sys.executable, me)
   except OSError as e:
     _print("fatal: unable to start %s" % repo_main, file=sys.stderr)
     _print("fatal: %s" % e, file=sys.stderr)

@@ -65,6 +65,7 @@ try:
 except ImportError:
   multiprocessing = None
 
+import event_log
 from git_command import GIT, git_require, GitCommand
 from git_config import GetUrlCookieFile
 from git_refs import R_HEADS, HEAD
@@ -310,9 +311,10 @@ later is required to fix a server side protocol bug.
     # - We always set err_event in the case of an exception.
     # - We always make sure we call sem.release().
     # - We always make sure we unlock the lock if we locked it.
+    start = time.time()
+    success = False
     try:
       try:
-        start = time.time()
         success = project.Sync_NetworkHalf(
           quiet=opt.quiet,
           current_branch_only=opt.current_branch_only,
@@ -352,13 +354,17 @@ later is required to fix a server side protocol bug.
     finally:
       if did_lock:
         lock.release()
+      finish = time.time()
+      self.event_log.AddSync(project, event_log.TASK_SYNC_NETWORK,
+                             start, finish, success)
 
     return success
 
   def _Fetch(self, projects, opt):
     fetched = set()
     lock = _threading.Lock()
-    pm = Progress('Fetching projects', len(projects))
+    pm = Progress('Fetching projects', len(projects),
+                  print_newline=not(opt.quiet))
 
     objdir_project_map = dict()
     for project in projects:
@@ -395,7 +401,7 @@ later is required to fix a server side protocol bug.
       t.join()
 
     # If we saw an error, exit with code 1 so that other scripts can check.
-    if err_event.isSet():
+    if err_event.isSet() and not opt.force_broken:
       print('\nerror: Exited sync due to fetch errors', file=sys.stderr)
       sys.exit(1)
 
@@ -751,16 +757,25 @@ later is required to fix a server side protocol bug.
       _PostRepoUpgrade(self.manifest, quiet=opt.quiet)
 
     if not opt.local_only:
-      mp.Sync_NetworkHalf(quiet=opt.quiet,
-                          current_branch_only=opt.current_branch_only,
-                          no_tags=opt.no_tags,
-                          optimized_fetch=opt.optimized_fetch,
-                          cache_dir=cache_dir)
+      start = time.time()
+      success = mp.Sync_NetworkHalf(quiet=opt.quiet,
+                                    current_branch_only=opt.current_branch_only,
+                                    no_tags=opt.no_tags,
+                                    optimized_fetch=opt.optimized_fetch,
+                                    submodules=self.manifest.HasSubmodules,
+                                    cache_dir=cache_dir)
+      finish = time.time()
+      self.event_log.AddSync(mp, event_log.TASK_SYNC_NETWORK,
+                             start, finish, success)
 
     if mp.HasChanges:
       syncbuf = SyncBuffer(mp.config)
-      mp.Sync_LocalHalf(syncbuf)
-      if not syncbuf.Finish():
+      start = time.time()
+      mp.Sync_LocalHalf(syncbuf, submodules=self.manifest.HasSubmodules)
+      clean = syncbuf.Finish()
+      self.event_log.AddSync(mp, event_log.TASK_SYNC_LOCAL,
+                             start, time.time(), clean)
+      if not clean:
         sys.exit(1)
       self._ReloadManifest(manifest_name)
       if opt.jobs is None:
@@ -854,7 +869,10 @@ later is required to fix a server side protocol bug.
     for project in all_projects:
       pm.update()
       if project.worktree:
+        start = time.time()
         project.Sync_LocalHalf(syncbuf, force_sync=opt.force_sync)
+        self.event_log.AddSync(project, event_log.TASK_SYNC_LOCAL,
+                               start, time.time(), syncbuf.Recently())
     pm.end()
     print(file=sys.stderr)
     if not syncbuf.Finish():
@@ -937,6 +955,7 @@ def _VerifyTag(project):
     print(file=sys.stderr)
     return False
   return True
+
 
 class _FetchTimes(object):
   _ALPHA = 0.5

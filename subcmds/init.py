@@ -111,6 +111,9 @@ to update the working directory files.
                  dest='archive', action='store_true',
                  help='checkout an archive instead of a git repository for '
                       'each project. See git archive.')
+    g.add_option('--submodules',
+                 dest='submodules', action='store_true',
+                 help='sync any submodules associated with the manifest repo')
     g.add_option('-g', '--groups',
                  dest='groups', default='default',
                  help='restrict manifest projects to ones with specified '
@@ -236,10 +239,13 @@ to update the working directory files.
               'in another location.', file=sys.stderr)
         sys.exit(1)
 
+    if opt.submodules:
+      m.config.SetString('repo.submodules', 'true')
+
     if not m.Sync_NetworkHalf(is_new=is_new, quiet=opt.quiet,
         clone_bundle=not opt.no_clone_bundle,
         current_branch_only=opt.current_branch_only,
-        no_tags=opt.no_tags):
+        no_tags=opt.no_tags, submodules=opt.submodules):
       r = m.GetRemote(m.remote.name)
       print('fatal: cannot obtain manifest %s' % r.url, file=sys.stderr)
 
@@ -250,10 +256,10 @@ to update the working directory files.
       sys.exit(1)
 
     if opt.manifest_branch:
-      m.MetaBranchSwitch()
+      m.MetaBranchSwitch(submodules=opt.submodules)
 
     syncbuf = SyncBuffer(m.config)
-    m.Sync_LocalHalf(syncbuf)
+    m.Sync_LocalHalf(syncbuf, submodules=opt.submodules)
     syncbuf.Finish()
 
     if is_new or m.CurrentBranch is None:
@@ -395,7 +401,7 @@ to update the working directory files.
     git_require(MIN_GIT_VERSION, fail=True)
 
     if opt.reference:
-      opt.reference = os.path.expanduser(opt.reference)
+      opt.reference = os.path.abspath(os.path.expanduser(opt.reference))
 
     # Check this here, else manifest will be tagged "not new" and init won't be
     # possible anymore without removing the .repo/manifests directory.
