@@ -178,7 +178,6 @@ class ReviewableBranch(object):
                       auto_topic=False,
                       draft=False,
                       private=False,
-                      notify=None,
                       wip=False,
                       dest_branch=None):
     self.project.UploadForReview(self.name,
@@ -186,7 +185,6 @@ class ReviewableBranch(object):
                                  auto_topic=auto_topic,
                                  draft=draft,
                                  private=private,
-                                 notify=notify,
                                  wip=wip,
                                  dest_branch=dest_branch)
 
@@ -1115,7 +1113,6 @@ class Project(object):
                       auto_topic=False,
                       draft=False,
                       private=False,
-                      notify=None,
                       wip=False,
                       dest_branch=None):
     """Uploads the named branch for code review.
@@ -1166,8 +1163,6 @@ class Project(object):
 
     opts = ['r=%s' % p for p in people[0]]
     opts += ['cc=%s' % p for p in people[1]]
-    if notify:
-      opts += ['notify=' + notify]
     if private:
       opts += ['private']
     if wip:
