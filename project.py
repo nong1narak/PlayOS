@@ -49,9 +49,7 @@ else:
   import urlparse
   urllib = imp.new_module('urllib')
   urllib.parse = urlparse
-  # pylint:disable=W0622
   input = raw_input
-  # pylint:enable=W0622
 
 
 def _lwrite(path, content):
@@ -106,7 +104,7 @@ def _ProjectHooks():
   if _project_hook_list is None:
     d = platform_utils.realpath(os.path.abspath(os.path.dirname(__file__)))
     d = os.path.join(d, 'hooks')
-    _project_hook_list = [os.path.join(d, x) for x in os.listdir(d)]
+    _project_hook_list = [os.path.join(d, x) for x in platform_utils.listdir(d)]
   return _project_hook_list
 
 
@@ -258,7 +256,7 @@ class _CopyFile(object):
           platform_utils.remove(dest)
         else:
           dest_dir = os.path.dirname(dest)
-          if not os.path.isdir(dest_dir):
+          if not platform_utils.isdir(dest_dir):
             os.makedirs(dest_dir)
         shutil.copy(src, dest)
         # make the file read-only
@@ -287,7 +285,7 @@ class _LinkFile(object):
           platform_utils.remove(absDest)
         else:
           dest_dir = os.path.dirname(absDest)
-          if not os.path.isdir(dest_dir):
+          if not platform_utils.isdir(dest_dir):
             os.makedirs(dest_dir)
         platform_utils.symlink(relSrc, absDest)
       except IOError:
@@ -307,7 +305,7 @@ class _LinkFile(object):
     else:
       # Entity doesn't exist assume there is a wild card
       absDestDir = self.abs_dest
-      if os.path.exists(absDestDir) and not os.path.isdir(absDestDir):
+      if os.path.exists(absDestDir) and not platform_utils.isdir(absDestDir):
         _error('Link error: src with wildcard, %s must be a directory',
                absDestDir)
       else:
@@ -663,6 +661,7 @@ class Project(object):
                groups=None,
                sync_c=False,
                sync_s=False,
+               sync_tags=True,
                clone_depth=None,
                upstream=None,
                parent=None,
@@ -686,6 +685,7 @@ class Project(object):
       groups: The `groups` attribute of manifest.xml's project element.
       sync_c: The `sync-c` attribute of manifest.xml's project element.
       sync_s: The `sync-s` attribute of manifest.xml's project element.
+      sync_tags: The `sync-tags` attribute of manifest.xml's project element.
       upstream: The `upstream` attribute of manifest.xml's project element.
       parent: The parent Project object.
       is_derived: False if the project was explicitly defined in the manifest;
@@ -718,6 +718,7 @@ class Project(object):
     self.groups = groups
     self.sync_c = sync_c
     self.sync_s = sync_s
+    self.sync_tags = sync_tags
     self.clone_depth = clone_depth
     self.upstream = upstream
     self.parent = parent
@@ -752,7 +753,7 @@ class Project(object):
 
   @property
   def Exists(self):
-    return os.path.isdir(self.gitdir) and os.path.isdir(self.objdir)
+    return platform_utils.isdir(self.gitdir) and platform_utils.isdir(self.objdir)
 
   @property
   def CurrentBranch(self):
@@ -933,7 +934,7 @@ class Project(object):
       quiet:  If True then only print the project name.  Do not print
               the modified files, branch name, etc.
     """
-    if not os.path.isdir(self.worktree):
+    if not platform_utils.isdir(self.worktree):
       if output_redir is None:
         output_redir = sys.stdout
       print(file=output_redir)
@@ -1330,7 +1331,8 @@ class Project(object):
       try:
         fd = open(alt)
         try:
-          alt_dir = fd.readline().rstrip()
+          # This works for both absolute and relative alternate directories.
+          alt_dir = os.path.join(self.objdir, 'objects', fd.readline().rstrip())
         finally:
           fd.close()
       except IOError:
@@ -1367,6 +1369,10 @@ class Project(object):
       elif self.manifest.default.sync_c:
         current_branch_only = True
 
+    if not no_tags:
+      if not self.sync_tags:
+        no_tags = True
+
     if self.clone_depth:
       depth = self.clone_depth
     else:
@@ -1381,6 +1387,16 @@ class Project(object):
                               no_tags=no_tags, prune=prune, depth=depth,
                               submodules=submodules)):
       return False
+
+    mp = self.manifest.manifestProject
+    dissociate = mp.config.GetBoolean('repo.dissociate')
+    if dissociate:
+      alternates_file = os.path.join(self.gitdir, 'objects/info/alternates')
+      if os.path.exists(alternates_file):
+        cmd = ['repack', '-a', '-d']
+        if GitCommand(self, cmd, bare=True).Wait() != 0:
+          return False
+        platform_utils.remove(alternates_file)
 
     if self.worktree:
       self._InitMRef()
@@ -1978,6 +1994,7 @@ class Project(object):
                            groups=self.groups,
                            sync_c=self.sync_c,
                            sync_s=self.sync_s,
+                           sync_tags=self.sync_tags,
                            parent=self,
                            is_derived=True)
       result.append(subproject)
@@ -2249,7 +2266,7 @@ class Project(object):
     cmd.append(bundle_dst)
     for f in remote.fetch:
       cmd.append(str(f))
-    cmd.append('refs/tags/*:refs/tags/*')
+    cmd.append('+refs/tags/*:refs/tags/*')
 
     ok = GitCommand(self, cmd, bare=True).Wait() == 0
     if os.path.exists(bundle_dst):
@@ -2338,6 +2355,16 @@ class Project(object):
     if GitCommand(self, cmd).Wait() != 0:
       if self._allrefs:
         raise GitError('%s cherry-pick %s ' % (self.name, rev))
+
+  def _LsRemote(self, refs):
+    cmd = ['ls-remote', self.remote.name, refs]
+    p = GitCommand(self, cmd, capture_stdout=True)
+    if p.Wait() == 0:
+      if hasattr(p.stdout, 'decode'):
+        return p.stdout.decode('utf-8')
+      else:
+        return p.stdout
+    return None
 
   def _Revert(self, rev):
     cmd = ['revert']
@@ -2431,6 +2458,10 @@ class Project(object):
             ref_dir = None
 
           if ref_dir:
+            if not os.path.isabs(ref_dir):
+              # The alternate directory is relative to the object database.
+              ref_dir = os.path.relpath(ref_dir,
+                                        os.path.join(self.objdir, 'objects'))
             _lwrite(os.path.join(self.gitdir, 'objects/info/alternates'),
                     os.path.join(ref_dir, 'objects') + '\n')
 
@@ -2567,7 +2598,7 @@ class Project(object):
 
     to_copy = []
     if copy_all:
-      to_copy = os.listdir(gitdir)
+      to_copy = platform_utils.listdir(gitdir)
 
     dotgit = platform_utils.realpath(dotgit)
     for name in set(to_copy).union(to_symlink):
@@ -2586,7 +2617,7 @@ class Project(object):
           platform_utils.symlink(
               os.path.relpath(src, os.path.dirname(dst)), dst)
         elif copy_all and not platform_utils.islink(dst):
-          if os.path.isdir(src):
+          if platform_utils.isdir(src):
             shutil.copytree(src, dst)
           elif os.path.isfile(src):
             shutil.copy(src, dst)
@@ -2726,7 +2757,7 @@ class Project(object):
         out = p.stdout
         if out:
           # Backslash is not anomalous
-          return out[:-1].split('\0')  # pylint: disable=W1401
+          return out[:-1].split('\0')
       return []
 
     def DiffZ(self, name, *args):
@@ -2743,7 +2774,7 @@ class Project(object):
         out = p.process.stdout.read()
         r = {}
         if out:
-          out = iter(out[:-1].split('\0'))  # pylint: disable=W1401
+          out = iter(out[:-1].split('\0'))
           while out:
             try:
               info = next(out)

@@ -306,8 +306,9 @@ class GitConfig(object):
     d = self._do('--null', '--list')
     if d is None:
       return c
-    for line in d.decode('utf-8').rstrip('\0').split('\0'):  # pylint: disable=W1401
-                                                             # Backslash is not anomalous
+    if not is_python3():
+      d = d.decode('utf-8')
+    for line in d.rstrip('\0').split('\0'):
       if '\n' in line:
         key, val = line.split('\n', 1)
       else:
@@ -502,7 +503,7 @@ def close_ssh():
   d = ssh_sock(create=False)
   if d:
     try:
-      os.rmdir(os.path.dirname(d))
+      platform_utils.rmdir(os.path.dirname(d))
     except OSError:
       pass
 
@@ -534,7 +535,7 @@ def GetUrlCookieFile(url, quiet):
         for line in p.stdout:
           line = line.strip()
           if line.startswith(cookieprefix):
-            cookiefile = line[len(cookieprefix):]
+            cookiefile = os.path.expanduser(line[len(cookieprefix):])
           if line.startswith(proxyprefix):
             proxy = line[len(proxyprefix):]
         # Leave subprocess open, as cookie file may be transient.
@@ -553,7 +554,10 @@ def GetUrlCookieFile(url, quiet):
       if e.errno == errno.ENOENT:
         pass  # No persistent proxy.
       raise
-  yield GitConfig.ForUser().GetString('http.cookiefile'), None
+  cookiefile = GitConfig.ForUser().GetString('http.cookiefile')
+  if cookiefile:
+    cookiefile = os.path.expanduser(cookiefile)
+  yield cookiefile, None
 
 def _preconnect(url):
   m = URI_ALL.match(url)
