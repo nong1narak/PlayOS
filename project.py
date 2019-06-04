@@ -1173,10 +1173,11 @@ class Project(object):
 
     ref_spec = '%s:refs/%s/%s' % (R_HEADS + branch.name, upload_type,
                                   dest_branch)
+    opts = []
     if auto_topic:
-      ref_spec = ref_spec + '/' + branch.name
+      opts += ['topic=' + branch.name]
 
-    opts = ['r=%s' % p for p in people[0]]
+    opts += ['r=%s' % p for p in people[0]]
     opts += ['cc=%s' % p for p in people[1]]
     if notify:
       opts += ['notify=' + notify]
@@ -1886,8 +1887,8 @@ class Project(object):
         submodules.append((sub_rev, sub_path, sub_url))
       return submodules
 
-    re_path = re.compile(r'^submodule\.([^.]+)\.path=(.*)$')
-    re_url = re.compile(r'^submodule\.([^.]+)\.url=(.*)$')
+    re_path = re.compile(r'^submodule\.(.+)\.path=(.*)$')
+    re_url = re.compile(r'^submodule\.(.+)\.url=(.*)$')
 
     def parse_gitmodules(gitdir, rev):
       cmd = ['cat-file', 'blob', '%s:.gitmodules' % rev]
@@ -2059,8 +2060,9 @@ class Project(object):
 
       if is_sha1 or tag_name is not None:
         if self._CheckForImmutableRevision():
-          print('Skipped fetching project %s (already have persistent ref)'
-                % self.name)
+          if not quiet:
+            print('Skipped fetching project %s (already have persistent ref)'
+                  % self.name)
           return True
       if is_sha1 and not depth:
         # When syncing a specific commit and --depth is not set:
@@ -2476,6 +2478,7 @@ class Project(object):
           if m.Has(key, include_defaults=False):
             self.config.SetString(key, m.GetString(key))
         self.config.SetString('filter.lfs.smudge', 'git-lfs smudge --skip -- %f')
+        self.config.SetString('filter.lfs.process', 'git-lfs filter-process --skip')
         if self.manifest.IsMirror:
           self.config.SetString('core.bare', 'true')
         else:
@@ -2667,7 +2670,7 @@ class Project(object):
         cmd.append('-v')
         cmd.append(HEAD)
         if GitCommand(self, cmd).Wait() != 0:
-          raise GitError("cannot initialize work tree")
+          raise GitError("cannot initialize work tree for " + self.name)
 
         if submodules:
           self._SyncSubmodules(quiet=True)
