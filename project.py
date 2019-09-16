@@ -40,6 +40,7 @@ from error import CacheApplyError
 from error import ManifestInvalidRevisionError
 from error import NoManifestException
 import platform_utils
+import progress
 from repo_trace import IsTrace, Trace
 
 from git_refs import GitRefs, HEAD, R_HEADS, R_TAGS, R_PUB, R_M
@@ -1776,7 +1777,7 @@ class Project(object):
 
 # Branch Management ##
 
-  def StartBranch(self, name, branch_merge=''):
+  def StartBranch(self, name, branch_merge='', revision=None):
     """Create a new branch off the manifest's revision.
     """
     if not branch_merge:
@@ -1797,7 +1798,11 @@ class Project(object):
     branch.merge = branch_merge
     if not branch.merge.startswith('refs/') and not ID_RE.match(branch_merge):
       branch.merge = R_HEADS + branch_merge
-    revid = self.GetRevisionId(all_refs)
+
+    if revision is None:
+      revid = self.GetRevisionId(all_refs)
+    else:
+      revid = self.work_git.rev_parse(revision)
 
     if head.startswith(R_HEADS):
       try:
@@ -2260,12 +2265,15 @@ class Project(object):
       cmd.append('--update-head-ok')
     cmd.append(name)
 
+    spec = []
+
     # If using depth then we should not get all the tags since they may
     # be outside of the depth.
     if no_tags or depth:
       cmd.append('--no-tags')
     else:
       cmd.append('--tags')
+      spec.append(str((u'+refs/tags/*:') + remote.ToLocal('refs/tags/*')))
 
     if force_sync:
       cmd.append('--force')
@@ -2276,12 +2284,9 @@ class Project(object):
     if submodules:
       cmd.append('--recurse-submodules=on-demand')
 
-    spec = []
     if not current_branch_only:
       # Fetch whole repo
       spec.append(str((u'+refs/heads/*:') + remote.ToLocal('refs/heads/*')))
-      if not (no_tags or depth):
-        spec.append(str((u'+refs/tags/*:') + remote.ToLocal('refs/tags/*')))
     elif tag_name is not None:
       spec.append('tag')
       spec.append(tag_name)
@@ -3188,6 +3193,11 @@ class SyncBuffer(object):
     return True
 
   def _PrintMessages(self):
+    if self._messages or self._failures:
+      if os.isatty(2):
+        self.out.write(progress.CSI_ERASE_LINE)
+      self.out.write('\r')
+
     for m in self._messages:
       m.Print(self)
     for m in self._failures:
