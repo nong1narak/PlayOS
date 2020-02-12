@@ -383,7 +383,12 @@ class _LinkFile(object):
     Handles wild cards on the src linking all of the files in the source in to
     the destination directory.
     """
-    src = _SafeExpandPath(self.git_worktree, self.src)
+    # Some people use src="." to create stable links to projects.  Lets allow
+    # that but reject all other uses of "." to keep things simple.
+    if self.src == '.':
+      src = self.git_worktree
+    else:
+      src = _SafeExpandPath(self.git_worktree, self.src)
 
     if os.path.exists(src):
       # Entity exists so just a simple one to one link operation.
@@ -2147,7 +2152,7 @@ class Project(object):
       gitmodules_lines = []
       fd, temp_gitmodules_path = tempfile.mkstemp()
       try:
-        os.write(fd, p.stdout)
+        os.write(fd, p.stdout.encode('utf-8'))
         os.close(fd)
         cmd = ['config', '--file', temp_gitmodules_path, '--list']
         p = GitCommand(None, cmd, capture_stdout=True, capture_stderr=True,
@@ -2556,7 +2561,7 @@ class Project(object):
         platform_utils.remove(tmpPath)
     with GetUrlCookieFile(srcUrl, quiet) as (cookiefile, proxy):
       if cookiefile:
-        cmd += ['--cookie', cookiefile, '--cookie-jar', cookiefile]
+        cmd += ['--cookie', cookiefile]
       if proxy:
         cmd += ['--proxy', proxy]
       elif 'http_proxy' in os.environ and 'darwin' == sys.platform:
