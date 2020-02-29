@@ -43,7 +43,7 @@ import platform_utils
 import progress
 from repo_trace import IsTrace, Trace
 
-from git_refs import GitRefs, HEAD, R_HEADS, R_TAGS, R_PUB, R_M
+from git_refs import GitRefs, HEAD, R_HEADS, R_TAGS, R_PUB, R_M, R_WORKTREE_M
 
 from pyversion import is_python3
 if is_python3():
@@ -202,7 +202,7 @@ class ReviewableBranch(object):
                       dryrun=False,
                       auto_topic=False,
                       hashtags=(),
-                      draft=False,
+                      labels=(),
                       private=False,
                       notify=None,
                       wip=False,
@@ -214,7 +214,7 @@ class ReviewableBranch(object):
                                  dryrun=dryrun,
                                  auto_topic=auto_topic,
                                  hashtags=hashtags,
-                                 draft=draft,
+                                 labels=labels,
                                  private=private,
                                  notify=notify,
                                  wip=wip,
@@ -1347,7 +1347,7 @@ class Project(object):
                       dryrun=False,
                       auto_topic=False,
                       hashtags=(),
-                      draft=False,
+                      labels=(),
                       private=False,
                       notify=None,
                       wip=False,
@@ -1397,16 +1397,12 @@ class Project(object):
     if dest_branch.startswith(R_HEADS):
       dest_branch = dest_branch[len(R_HEADS):]
 
-    upload_type = 'for'
-    if draft:
-      upload_type = 'drafts'
-
-    ref_spec = '%s:refs/%s/%s' % (R_HEADS + branch.name, upload_type,
-                                  dest_branch)
+    ref_spec = '%s:refs/for/%s' % (R_HEADS + branch.name, dest_branch)
     opts = []
     if auto_topic:
       opts += ['topic=' + branch.name]
     opts += ['t=%s' % p for p in hashtags]
+    opts += ['l=%s' % p for p in labels]
 
     opts += ['r=%s' % p for p in people[0]]
     opts += ['cc=%s' % p for p in people[1]]
@@ -2824,10 +2820,19 @@ class Project(object):
         os.makedirs(self.objdir)
         self.bare_objdir.init()
 
-        # Enable per-worktree config file support if possible.  This is more a
-        # nice-to-have feature for users rather than a hard requirement.
-        if self.use_git_worktrees and git_require((2, 19, 0)):
-          self.EnableRepositoryExtension('worktreeConfig')
+        if self.use_git_worktrees:
+          # Set up the m/ space to point to the worktree-specific ref space.
+          # We'll update the worktree-specific ref space on each checkout.
+          if self.manifest.branch:
+            self.bare_git.symbolic_ref(
+                '-m', 'redirecting to worktree scope',
+                R_M + self.manifest.branch,
+                R_WORKTREE_M + self.manifest.branch)
+
+          # Enable per-worktree config file support if possible.  This is more a
+          # nice-to-have feature for users rather than a hard requirement.
+          if git_require((2, 19, 0)):
+            self.EnableRepositoryExtension('worktreeConfig')
 
       # If we have a separate directory to hold refs, initialize it as well.
       if self.objdir != self.gitdir:
@@ -2962,25 +2967,37 @@ class Project(object):
 
   def _InitMRef(self):
     if self.manifest.branch:
-      self._InitAnyMRef(R_M + self.manifest.branch)
+      if self.use_git_worktrees:
+        # We can't update this ref with git worktrees until it exists.
+        # We'll wait until the initial checkout to set it.
+        if not os.path.exists(self.worktree):
+          return
+
+        base = R_WORKTREE_M
+        active_git = self.work_git
+      else:
+        base = R_M
+        active_git = self.bare_git
+
+      self._InitAnyMRef(base + self.manifest.branch, active_git)
 
   def _InitMirrorHead(self):
-    self._InitAnyMRef(HEAD)
+    self._InitAnyMRef(HEAD, self.bare_git)
 
-  def _InitAnyMRef(self, ref):
+  def _InitAnyMRef(self, ref, active_git):
     cur = self.bare_ref.symref(ref)
 
     if self.revisionId:
       if cur != '' or self.bare_ref.get(ref) != self.revisionId:
         msg = 'manifest set to %s' % self.revisionId
         dst = self.revisionId + '^0'
-        self.bare_git.UpdateRef(ref, dst, message=msg, detach=True)
+        active_git.UpdateRef(ref, dst, message=msg, detach=True)
     else:
       remote = self.GetRemote(self.remote.name)
       dst = remote.ToLocal(self.revisionExpr)
       if cur != dst:
         msg = 'manifest set to %s' % self.revisionExpr
-        self.bare_git.symbolic_ref('-m', msg, ref, dst)
+        active_git.symbolic_ref('-m', msg, ref, dst)
 
   def _CheckDirReference(self, srcdir, destdir, share_refs):
     # Git worktrees don't use symlinks to share at all.
@@ -3110,6 +3127,8 @@ class Project(object):
     # Use relative path from worktree->checkout.
     with open(os.path.join(git_worktree_path, 'gitdir'), 'w') as fp:
       print(os.path.relpath(dotgit, git_worktree_path), file=fp)
+
+    self._InitMRef()
 
   def _InitWorkTree(self, force_sync=False, submodules=False):
     realdotgit = os.path.join(self.worktree, '.git')
