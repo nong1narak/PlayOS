@@ -266,6 +266,9 @@ later is required to fix a server side protocol bug.
     p.add_option('--optimized-fetch',
                  dest='optimized_fetch', action='store_true',
                  help='only fetch projects fixed to sha1 if revision does not exist locally')
+    p.add_option('--retry-fetches',
+                 default=0, action='store', type='int',
+                 help='number of times to retry fetches on transient errors')
     p.add_option('--prune', dest='prune', action='store_true',
                  help='delete refs that no longer exist on the remote')
     p.add_option('--cache-dir', dest='cache_dir', action='store',
@@ -348,6 +351,7 @@ later is required to fix a server side protocol bug.
             clone_bundle=opt.clone_bundle,
             tags=opt.tags, archive=self.manifest.IsArchive,
             optimized_fetch=opt.optimized_fetch,
+            retry_fetches=opt.retry_fetches,
             prune=opt.prune,
             cache_dir=opt.cache_dir,
             clone_filter=clone_filter)
@@ -784,6 +788,7 @@ later is required to fix a server side protocol bug.
                                     current_branch_only=opt.current_branch_only,
                                     tags=opt.tags,
                                     optimized_fetch=opt.optimized_fetch,
+                                    retry_fetches=opt.retry_fetches,
                                     submodules=self.manifest.HasSubmodules,
                                     clone_filter=self.manifest.CloneFilter,
                                     cache_dir=opt.cache_dir)
