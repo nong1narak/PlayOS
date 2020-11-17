@@ -31,7 +31,7 @@ else:
   urllib.parse = urlparse
 
 import gitc_utils
-from git_config import GitConfig
+from git_config import GitConfig, IsId
 from git_refs import R_HEADS, HEAD
 import platform_utils
 from project import RemoteSpec, Project, MetaProject
@@ -192,7 +192,6 @@ class XmlManifest(object):
     self.topdir = os.path.dirname(self.repodir)
     self.manifestFile = os.path.join(self.repodir, MANIFEST_FILE_NAME)
     self.globalConfig = GitConfig.ForUser()
-    self.localManifestWarning = False
     self.isGitcClient = False
     self._load_local_manifests = True
 
@@ -284,9 +283,8 @@ https://gerrit.googlesource.com/git-repo/+/HEAD/docs/manifest-format.md
   def _ParseGroups(self, groups):
     return [x for x in re.split(r'[,\s]+', groups) if x]
 
-  def Save(self, fd, peg_rev=False, peg_rev_upstream=True, peg_rev_dest_branch=True, groups=None):
-    """Write the current manifest out to the given file descriptor.
-    """
+  def ToXml(self, peg_rev=False, peg_rev_upstream=True, peg_rev_dest_branch=True, groups=None):
+    """Return the current manifest XML."""
     mp = self.manifestProject
 
     if groups is None:
@@ -460,6 +458,56 @@ https://gerrit.googlesource.com/git-repo/+/HEAD/docs/manifest-format.md
                      ' '.join(self._repo_hooks_project.enabled_repo_hooks))
       root.appendChild(e)
 
+    return doc
+
+  def ToDict(self, **kwargs):
+    """Return the current manifest as a dictionary."""
+    # Elements that may only appear once.
+    SINGLE_ELEMENTS = {
+        'notice',
+        'default',
+        'manifest-server',
+        'repo-hooks',
+    }
+    # Elements that may be repeated.
+    MULTI_ELEMENTS = {
+        'remote',
+        'remove-project',
+        'project',
+        'extend-project',
+        'include',
+        # These are children of 'project' nodes.
+        'annotation',
+        'project',
+        'copyfile',
+        'linkfile',
+    }
+
+    doc = self.ToXml(**kwargs)
+    ret = {}
+
+    def append_children(ret, node):
+      for child in node.childNodes:
+        if child.nodeType == xml.dom.Node.ELEMENT_NODE:
+          attrs = child.attributes
+          element = dict((attrs.item(i).localName, attrs.item(i).value)
+                         for i in range(attrs.length))
+          if child.nodeName in SINGLE_ELEMENTS:
+            ret[child.nodeName] = element
+          elif child.nodeName in MULTI_ELEMENTS:
+            ret.setdefault(child.nodeName, []).append(element)
+          else:
+            raise ManifestParseError('Unhandled element "%s"' % (child.nodeName,))
+
+          append_children(element, child)
+
+    append_children(ret, doc.firstChild)
+
+    return ret
+
+  def Save(self, fd, **kwargs):
+    """Write the current manifest out to the given file descriptor."""
+    doc = self.ToXml(**kwargs)
     doc.writexml(fd, '', '  ', '\n', 'UTF-8')
 
   def _output_manifest_project_extras(self, p, e):
@@ -555,15 +603,12 @@ https://gerrit.googlesource.com/git-repo/+/HEAD/docs/manifest-format.md
                                           self.manifestProject.worktree))
 
       if self._load_local_manifests:
-        local = os.path.join(self.repodir, LOCAL_MANIFEST_NAME)
-        if os.path.exists(local):
-          if not self.localManifestWarning:
-            self.localManifestWarning = True
-            print('warning: %s is deprecated; put local manifests '
-                  'in `%s` instead' % (LOCAL_MANIFEST_NAME,
-                                       os.path.join(self.repodir, LOCAL_MANIFESTS_DIR_NAME)),
-                  file=sys.stderr)
-          nodes.append(self._ParseManifestXml(local, self.repodir))
+        if os.path.exists(os.path.join(self.repodir, LOCAL_MANIFEST_NAME)):
+          print('error: %s is not supported; put local manifests in `%s`'
+                'instead' % (LOCAL_MANIFEST_NAME,
+                             os.path.join(self.repodir, LOCAL_MANIFESTS_DIR_NAME)),
+                file=sys.stderr)
+          sys.exit(1)
 
         local_dir = os.path.abspath(os.path.join(self.repodir,
                                                  LOCAL_MANIFESTS_DIR_NAME))
@@ -709,6 +754,10 @@ https://gerrit.googlesource.com/git-repo/+/HEAD/docs/manifest-format.md
             p.groups.extend(groups)
           if revision:
             p.revisionExpr = revision
+            if IsId(revision):
+              p.revisionId = revision
+            else:
+              p.revisionId = None
           if remote:
             p.remote = remote.ToRemoteSpec(name)
       if node.nodeName == 'repo-hooks':

@@ -142,8 +142,8 @@ Attribute `review`: Hostname of the Gerrit server where reviews
 are uploaded to by `repo upload`.  This attribute is optional;
 if not specified then `repo upload` will not function.
 
-Attribute `revision`: Name of a Git branch (e.g. `master` or
-`refs/heads/master`). Remotes with their own revision will override
+Attribute `revision`: Name of a Git branch (e.g. `main` or
+`refs/heads/main`). Remotes with their own revision will override
 the default revision.
 
 ### Element default
@@ -156,11 +156,11 @@ Attribute `remote`: Name of a previously defined remote element.
 Project elements lacking a remote attribute of their own will use
 this remote.
 
-Attribute `revision`: Name of a Git branch (e.g. `master` or
-`refs/heads/master`).  Project elements lacking their own
+Attribute `revision`: Name of a Git branch (e.g. `main` or
+`refs/heads/main`).  Project elements lacking their own
 revision attribute will use this revision.
 
-Attribute `dest-branch`: Name of a Git branch (e.g. `master`).
+Attribute `dest-branch`: Name of a Git branch (e.g. `main`).
 Project elements not setting their own `dest-branch` will inherit
 this value. If this value is not set, projects will use `revision`
 by default instead.
@@ -247,13 +247,13 @@ If not supplied the remote given by the default element is used.
 
 Attribute `revision`: Name of the Git branch the manifest wants
 to track for this project.  Names can be relative to refs/heads
-(e.g. just "master") or absolute (e.g. "refs/heads/master").
+(e.g. just "main") or absolute (e.g. "refs/heads/main").
 Tags and/or explicit SHA-1s should work in theory, but have not
 been extensively tested.  If not supplied the revision given by
 the remote element is used if applicable, else the default
 element is used.
 
-Attribute `dest-branch`: Name of a Git branch (e.g. `master`).
+Attribute `dest-branch`: Name of a Git branch (e.g. `main`).
 When using `repo upload`, changes will be submitted for code
 review on this branch. If unspecified both here and in the
 default element, `revision` is used instead.
@@ -396,10 +396,4 @@ these extra projects.
 Manifest files stored in `$TOP_DIR/.repo/local_manifests/*.xml` will
 be loaded in alphabetical order.
 
-Additional remotes and projects may also be added through a local
-manifest, stored in `$TOP_DIR/.repo/local_manifest.xml`. This method
-is deprecated in favor of using multiple manifest files as mentioned
-above.
-
-If `$TOP_DIR/.repo/local_manifest.xml` exists, it will be loaded before
-any manifest files stored in `$TOP_DIR/.repo/local_manifests/*.xml`.
+The legacy `$TOP_DIR/.repo/local_manifest.xml` path is no longer supported.
