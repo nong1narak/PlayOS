@@ -63,7 +63,8 @@ RETRY_JITTER_PERCENT = 0.1
 def _lwrite(path, content):
   lock = '%s.lock' % path
 
-  with open(lock, 'w') as fd:
+  # Maintain Unix line endings on all OS's to match git behavior.
+  with open(lock, 'w', newline='\n') as fd:
     fd.write(content)
 
   try:
@@ -511,7 +512,7 @@ class Project(object):
                      with exponential backoff and jitter.
       old_revision: saved git commit id for open GITC projects.
     """
-    self.manifest = manifest
+    self.client = self.manifest = manifest
     self.name = name
     self.remote = remote
     self.gitdir = gitdir.replace('\\', '/')
@@ -552,7 +553,7 @@ class Project(object):
     self.linkfiles = []
     self.annotations = []
     self.config = GitConfig.ForRepository(gitdir=self.gitdir,
-                                          defaults=self.manifest.globalConfig)
+                                          defaults=self.client.globalConfig)
 
     if self.worktree:
       self.work_git = self._GitGetByExec(self, bare=False, gitdir=gitdir)
@@ -1027,10 +1028,11 @@ class Project(object):
     if GitCommand(self, cmd, bare=True).Wait() != 0:
       raise UploadError('Upload failed')
 
-    msg = "posted to %s for %s" % (branch.remote.review, dest_branch)
-    self.bare_git.UpdateRef(R_PUB + branch.name,
-                            R_HEADS + branch.name,
-                            message=msg)
+    if not dryrun:
+      msg = "posted to %s for %s" % (branch.remote.review, dest_branch)
+      self.bare_git.UpdateRef(R_PUB + branch.name,
+                              R_HEADS + branch.name,
+                              message=msg)
 
 # Sync ##
   def _ExtractArchive(self, tarpath, path=None):
@@ -1247,7 +1249,7 @@ class Project(object):
     self._InitHooks()
 
   def _CopyAndLinkFiles(self):
-    if self.manifest.isGitcClient:
+    if self.client.isGitcClient:
       return
     for copyfile in self.copyfiles:
       copyfile._Copy()
@@ -2780,12 +2782,14 @@ class Project(object):
     # Some platforms (e.g. Windows) won't let us update dotgit in situ because
     # of file permissions.  Delete it and recreate it from scratch to avoid.
     platform_utils.remove(dotgit)
-    # Use relative path from checkout->worktree.
-    with open(dotgit, 'w') as fp:
+    # Use relative path from checkout->worktree & maintain Unix line endings
+    # on all OS's to match git behavior.
+    with open(dotgit, 'w', newline='\n') as fp:
       print('gitdir:', os.path.relpath(git_worktree_path, self.worktree),
             file=fp)
-    # Use relative path from worktree->checkout.
-    with open(os.path.join(git_worktree_path, 'gitdir'), 'w') as fp:
+    # Use relative path from worktree->checkout & maintain Unix line endings
+    # on all OS's to match git behavior.
+    with open(os.path.join(git_worktree_path, 'gitdir'), 'w', newline='\n') as fp:
       print(os.path.relpath(dotgit, git_worktree_path), file=fp)
 
     self._InitMRef()
