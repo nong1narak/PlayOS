@@ -25,6 +25,8 @@ import shutil
 import tempfile
 import unittest
 
+import git_command
+import main
 import platform_utils
 from pyversion import is_python3
 import wrapper
@@ -81,6 +83,16 @@ class RepoWrapperUnitTest(RepoWrapperTestCase):
     self.assertEqual(0, e.exception.code)
     self.assertEqual('', stderr.getvalue())
     self.assertIn('repo launcher version', stdout.getvalue())
+
+  def test_python_constraints(self):
+    """The launcher should never require newer than main.py."""
+    self.assertGreaterEqual(main.MIN_PYTHON_VERSION_HARD,
+                            wrapper.MIN_PYTHON_VERSION_HARD)
+    self.assertGreaterEqual(main.MIN_PYTHON_VERSION_SOFT,
+                            wrapper.MIN_PYTHON_VERSION_SOFT)
+    # Make sure the versions are themselves in sync.
+    self.assertGreaterEqual(wrapper.MIN_PYTHON_VERSION_SOFT,
+                            wrapper.MIN_PYTHON_VERSION_HARD)
 
   def test_init_parser(self):
     """Make sure 'init' GetParser works."""
@@ -357,7 +369,19 @@ class GitCheckoutTestCase(RepoWrapperTestCase):
 
     remote = os.path.join(cls.GIT_DIR, 'remote')
     os.mkdir(remote)
-    run_git('init', cwd=remote)
+
+    # Tests need to assume, that main is default branch at init,
+    # which is not supported in config until 2.28.
+    if git_command.git_require((2, 28, 0)):
+      initstr = '--initial-branch=main'
+    else:
+      # Use template dir for init.
+      templatedir = tempfile.mkdtemp(prefix='.test-template')
+      with open(os.path.join(templatedir, 'HEAD'), 'w') as fp:
+        fp.write('ref: refs/heads/main\n')
+      initstr = '--template=' + templatedir
+
+    run_git('init', initstr, cwd=remote)
     run_git('commit', '--allow-empty', '-minit', cwd=remote)
     run_git('branch', 'stable', cwd=remote)
     run_git('tag', 'v1.0', cwd=remote)
