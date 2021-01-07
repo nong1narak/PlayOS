@@ -1,5 +1,3 @@
-# -*- coding:utf-8 -*-
-#
 # Copyright (C) 2008 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import print_function
 import errno
 import filecmp
 import glob
@@ -28,6 +25,7 @@ import sys
 import tarfile
 import tempfile
 import time
+import urllib.parse
 
 from color import Coloring
 from git_command import GitCommand, git_require
@@ -42,16 +40,6 @@ import progress
 from repo_trace import IsTrace, Trace
 
 from git_refs import GitRefs, HEAD, R_HEADS, R_TAGS, R_PUB, R_M, R_WORKTREE_M
-
-from pyversion import is_python3
-if is_python3():
-  import urllib.parse
-else:
-  import imp
-  import urlparse
-  urllib = imp.new_module('urllib')
-  urllib.parse = urlparse
-  input = raw_input  # noqa: F821
 
 
 # Maximum sleep time allowed during retries.

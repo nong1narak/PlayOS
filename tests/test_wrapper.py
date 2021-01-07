@@ -1,5 +1,3 @@
-# -*- coding:utf-8 -*-
-#
 # Copyright (C) 2015 The Android Open Source Project
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -16,28 +14,19 @@
 
 """Unittests for the wrapper.py module."""
 
-from __future__ import print_function
-
 import contextlib
+from io import StringIO
 import os
 import re
 import shutil
 import tempfile
 import unittest
+from unittest import mock
 
 import git_command
 import main
 import platform_utils
-from pyversion import is_python3
 import wrapper
-
-
-if is_python3():
-  from unittest import mock
-  from io import StringIO
-else:
-  import mock
-  from StringIO import StringIO
 
 
 @contextlib.contextmanager
@@ -65,9 +54,6 @@ class RepoWrapperTestCase(unittest.TestCase):
     """Load the wrapper module every time."""
     wrapper._wrapper_module = None
     self.wrapper = wrapper.Wrapper()
-
-    if not is_python3():
-      self.assertRegex = self.assertRegexpMatches
 
 
 class RepoWrapperUnitTest(RepoWrapperTestCase):

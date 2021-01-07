@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-# -*- coding:utf-8 -*-
 #
 # Copyright (C) 2008 The Android Open Source Project
 #
@@ -21,7 +20,6 @@ People shouldn't run this directly; instead, they should use the `repo` wrapper
 which takes care of execing this entry point.
 """
 
-from __future__ import print_function
 import getpass
 import netrc
 import optparse
@@ -30,15 +28,7 @@ import shlex
 import sys
 import textwrap
 import time
-
-from pyversion import is_python3
-if is_python3():
-  import urllib.request
-else:
-  import imp
-  import urllib2
-  urllib = imp.new_module('urllib')
-  urllib.request = urllib2
+import urllib.request
 
 try:
   import kerberos
@@ -70,8 +60,6 @@ from wrapper import WrapperPath, Wrapper
 
 from subcmds import all_commands
 
-if not is_python3():
-  input = raw_input  # noqa: F821
 
 # NB: These do not need to be kept in sync with the repo launcher script.
 # These may be much newer as it allows the repo launcher to roll between
