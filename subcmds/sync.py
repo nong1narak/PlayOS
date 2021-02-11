@@ -300,28 +300,12 @@ later is required to fix a server side protocol bug.
     Returns:
       Returns path to the overriding manifest file.
     """
-    if not self.manifest.superproject:
-      print('error: superproject tag is not defined in manifest.xml',
-            file=sys.stderr)
-      sys.exit(1)
-    print('WARNING: --use-superproject is experimental and not '
-          'for general use', file=sys.stderr)
-
-    superproject_url = self.manifest.superproject['remote'].url
-    if not superproject_url:
-      print('error: superproject URL is not defined in manifest.xml',
-            file=sys.stderr)
-      sys.exit(1)
-
-    superproject = git_superproject.Superproject(self.manifest.repodir)
+    superproject = git_superproject.Superproject(self.manifest,
+                                                 self.repodir)
     all_projects = self.GetProjects(args,
                                     missing_ok=True,
                                     submodules_ok=opt.fetch_submodules)
-    branch = self._GetBranch()
-    manifest_path = superproject.UpdateProjectsRevisionId(self.manifest,
-                                                          all_projects,
-                                                          url=superproject_url,
-                                                          branch=branch)
+    manifest_path = superproject.UpdateProjectsRevisionId(all_projects)
     if not manifest_path:
       print('error: Update of revsionId from superproject has failed',
             file=sys.stderr)
@@ -687,7 +671,7 @@ later is required to fix a server side protocol bug.
       if project.relpath:
         new_project_paths.append(project.relpath)
     file_name = 'project.list'
-    file_path = os.path.join(self.manifest.repodir, file_name)
+    file_path = os.path.join(self.repodir, file_name)
     old_project_paths = []
 
     if os.path.exists(file_path):
