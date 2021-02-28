@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import glob
 import http.cookiejar as cookielib
 import io
 import json
@@ -50,7 +49,7 @@ except ImportError:
   multiprocessing = None
 
 import event_log
-from git_command import GIT, git_require, GitCommand
+from git_command import GIT, git_require
 from git_config import GetUrlCookieFile
 from git_refs import R_HEADS, HEAD
 import git_superproject
@@ -872,22 +871,10 @@ later is required to fix a server side protocol bug.
               'repository.')
         sys.exit(1)
 
-      if os.path.exists(cache_dir):
-        if not os.path.isdir(cache_dir):
-          print('fatal: cache_dir must be a directory', file=sys.stderr)
-          sys.exit(1)
-        else:
-          # Unlock the locks in the cache_dir.
-          unlock_cmd = ['cache', 'unlock', '-vv', '--force', '--all',
-                        '--cache-dir', cache_dir]
-          if GitCommand(None, unlock_cmd).Wait() != 0:
-            raise Exception('Failed to unlock cache_dir %s' % cache_dir)
-
-          locks = glob.glob(os.path.join(cache_dir, '*.lock'))
-          if locks:
-            raise Exception('Found %s after cache unlock.' % locks)
-      else:
-        os.makedirs(opt.cache_dir)
+      if os.path.isfile(cache_dir):
+        print('fatal: %s: cache_dir must be a directory', cache_dir, file=sys.stderr)
+        sys.exit(1)
+      os.makedirs(opt.cache_dir, exist_ok=True)
 
     if opt.manifest_name:
       self.manifest.Override(opt.manifest_name)
