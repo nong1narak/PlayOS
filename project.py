@@ -864,7 +864,7 @@ class Project(object):
       out.nl()
       out.project('project %s/' % self.relpath)
       out.nl()
-      out.write(p.stdout)
+      out.write('%s', p.stdout)
     return p.Wait() == 0
 
 # Publish / Upload ##
