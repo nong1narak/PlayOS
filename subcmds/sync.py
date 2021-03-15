@@ -534,7 +534,7 @@ later is required to fix a server side protocol bug.
 
     pm.end()
 
-    return ret
+    return ret and not err_results
 
   def _GCProjects(self, projects, opt, err_event):
     gc_gitdirs = {}
