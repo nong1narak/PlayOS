@@ -282,6 +282,16 @@ later is required to fix a server side protocol bug.
       branch = branch[len(R_HEADS):]
     return branch
 
+  def _UseSuperproject(self, opt):
+    """Returns True if use-superproject option is enabled"""
+    return (opt.use_superproject or
+            self.manifest.manifestProject.config.GetBoolean(
+                'repo.superproject'))
+
+  def _GetCurrentBranchOnly(self, opt):
+    """Returns True if current-branch or use-superproject options are enabled."""
+    return opt.current_branch_only or self._UseSuperproject(opt)
+
   def _UpdateProjectsRevisionId(self, opt, args):
     """Update revisionId of every project with the SHA from superproject.
 
@@ -368,7 +378,7 @@ later is required to fix a server side protocol bug.
             quiet=opt.quiet,
             verbose=opt.verbose,
             output_redir=buf,
-            current_branch_only=opt.current_branch_only,
+            current_branch_only=self._GetCurrentBranchOnly(opt),
             force_sync=opt.force_sync,
             clone_bundle=opt.clone_bundle,
             tags=opt.tags, archive=self.manifest.IsArchive,
@@ -741,7 +751,7 @@ later is required to fix a server side protocol bug.
     if not opt.local_only:
       start = time.time()
       success = mp.Sync_NetworkHalf(quiet=opt.quiet, verbose=opt.verbose,
-                                    current_branch_only=opt.current_branch_only,
+                                    current_branch_only=self._GetCurrentBranchOnly(opt),
                                     force_sync=opt.force_sync,
                                     tags=opt.tags,
                                     optimized_fetch=opt.optimized_fetch,
@@ -849,9 +859,7 @@ later is required to fix a server side protocol bug.
     else:
       self._UpdateManifestProject(opt, mp, manifest_name)
 
-    if (opt.use_superproject or
-        self.manifest.manifestProject.config.GetBoolean(
-            'repo.superproject')):
+    if self._UseSuperproject(opt):
       manifest_name = self._UpdateProjectsRevisionId(opt, args)
 
     if self.gitc_manifest:
