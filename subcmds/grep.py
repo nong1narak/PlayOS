@@ -13,11 +13,10 @@
 # limitations under the License.
 
 import functools
-import multiprocessing
 import sys
 
 from color import Coloring
-from command import DEFAULT_LOCAL_JOBS, PagedCommand, WORKER_BATCH_SIZE
+from command import DEFAULT_LOCAL_JOBS, PagedCommand
 from error import GitError
 from git_command import GitCommand
 
@@ -82,8 +81,11 @@ contain a line that matches both expressions:
     if value is not None:
       pt.append(value)
 
+  def _CommonOptions(self, p):
+    """Override common options slightly."""
+    super()._CommonOptions(p, opt_v=False)
+
   def _Options(self, p):
-    super()._Options(p)
     g = p.add_option_group('Sources')
     g.add_option('--cached',
                  action='callback', callback=self._carry_option,
@@ -170,7 +172,7 @@ contain a line that matches both expressions:
     return (project, p.Wait(), p.stdout, p.stderr)
 
   @staticmethod
-  def _ProcessResults(out, full_name, have_rev, results):
+  def _ProcessResults(full_name, have_rev, _pool, out, results):
     git_failed = False
     bad_rev = False
     have_match = False
@@ -253,18 +255,13 @@ contain a line that matches both expressions:
       cmd_argv.extend(opt.revision)
     cmd_argv.append('--')
 
-    process_results = functools.partial(
-        self._ProcessResults, out, full_name, have_rev)
-    # NB: Multiprocessing is heavy, so don't spin it up for one job.
-    if len(projects) == 1 or opt.jobs == 1:
-      git_failed, bad_rev, have_match = process_results(
-          self._ExecuteOne(cmd_argv, x) for x in projects)
-    else:
-      with multiprocessing.Pool(opt.jobs) as pool:
-        results = pool.imap(
-            functools.partial(self._ExecuteOne, cmd_argv), projects,
-            chunksize=WORKER_BATCH_SIZE)
-        git_failed, bad_rev, have_match = process_results(results)
+    git_failed, bad_rev, have_match = self.ExecuteInParallel(
+        opt.jobs,
+        functools.partial(self._ExecuteOne, cmd_argv),
+        projects,
+        callback=functools.partial(self._ProcessResults, full_name, have_rev),
+        output=out,
+        ordered=True)
 
     if git_failed:
       sys.exit(1)
